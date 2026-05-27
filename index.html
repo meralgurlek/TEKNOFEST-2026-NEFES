@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32 Mesh Ağı Simülatörü</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #1a1d27;
+    --bg3: #22263a;
+    --border: rgba(255,255,255,0.08);
+    --text: #e8eaf0;
+    --muted: #7a7f99;
+    --accent: #6c63ff;
+    --green: #1db97a;
+    --red: #e24b4a;
+    --amber: #f0a623;
+    --blue: #378add;
+    --radius: 12px;
+    --font: 'JetBrains Mono', 'Fira Code', monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* Header */
+  header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .logo h1 { font-size: 15px; font-weight: 600; letter-spacing: .02em; }
+  .logo span { font-size: 12px; color: var(--muted); margin-left: 2px; }
+  .status-badge {
+    font-size: 11px; padding: 4px 12px; border-radius: 20px;
+    font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+    background: rgba(255,255,255,0.06); color: var(--muted);
+    border: 1px solid var(--border); transition: all .3s;
+  }
+  .status-badge.running {
+    background: rgba(29,185,122,0.15); color: var(--green);
+    border-color: rgba(29,185,122,0.3);
+    box-shadow: 0 0 12px rgba(29,185,122,0.2);
+  }
+
+  /* Layout */
+  .main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; display: grid; grid-template-columns: 1fr 340px; gap: 20px; }
+  @media(max-width:800px){ .main { grid-template-columns: 1fr; } }
+
+  /* Canvas */
+  .canvas-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  canvas { display: block; width: 100%; height: 320px; }
+
+  /* Metrics */
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .metric {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .metric-label { font-size: 10px; color: var(--muted); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 4px; }
+  .metric-val { font-size: 26px; font-weight: 700; font-family: var(--font); }
+  .metric-val.hr { color: var(--red); }
+  .metric-val.spo2 { color: var(--green); }
+  .metric-val.bat { color: var(--amber); }
+  .metric-val.lat { color: var(--blue); }
+  .metric-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  /* Right panel */
+  .right-panel { display: flex; flex-direction: column; gap: 14px; }
+  .panel-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .json-body {
+    padding: 14px 16px;
+    font-family: var(--font);
+    font-size: 12px;
+    line-height: 1.8;
+    min-height: 80px;
+    color: var(--muted);
+  }
+  .jk { color: #c792ea; }
+  .js { color: var(--green); }
+  .jn { color: var(--amber); }
+
+  /* Log */
+  .log-body {
+    padding: 10px 14px;
+    font-family: var(--font);
+    font-size: 11px;
+    line-height: 1.75;
+    height: 200px;
+    overflow-y: auto;
+    color: var(--muted);
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .log-body::-webkit-scrollbar { width: 4px; }
+  .log-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .ll { color: var(--muted); }
+  .ll.ok { color: var(--green); }
+  .ll.send { color: var(--blue); }
+  .ll.recv { color: var(--amber); }
+  .ll.sleep { color: #6c63ff; }
+  .ll.err { color: var(--red); }
+
+  /* Controls */
+  .controls {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    padding: 14px 18px;
+    border-top: 1px solid var(--border);
+  }
+  button {
+    font-size: 12px; font-weight: 600;
+    padding: 7px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    cursor: pointer;
+    transition: all .15s;
+    letter-spacing: .02em;
+  }
+  button:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.15); }
+  button:active { transform: scale(0.97); }
+  button.start { background: rgba(108,99,255,0.18); color: #a99dff; border-color: rgba(108,99,255,0.35); }
+  button.start:hover { background: rgba(108,99,255,0.28); }
+  button.stop { background: rgba(226,75,74,0.12); color: #f08080; border-color: rgba(226,75,74,0.3); }
+
+  /* Node legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--border); }
+  .leg-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+  .leg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* Speed slider */
+  .slider-row { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+
+  /* Packet counter */
+  .counter { font-family: var(--font); font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot" id="hdr-dot"></div>
+    <h1>ESP32 Mesh Ağı Simülatörü <span>v1.0</span></h1>
+  </div>
+  <span class="status-badge" id="status-badge">● Durduruldu</span>
+</header>
+
+<div class="main">
+  <!-- Left -->
+  <div>
+    <div class="canvas-card">
+      <div class="card-header">
+        <span>Ağ Topolojisi</span>
+        <span class="counter" id="pkt-count">Paket: 0</span>
+      </div>
+      <canvas id="netCanvas"></canvas>
+      <div class="legend" id="legend"></div>
+      <div class="slider-row">
+        <span>Hız:</span>
+        <input type="range" min="500" max="5000" value="3000" step="500" id="speed-slider" oninput="setSpeed(this.value)">
+        <span id="speed-label">3.0s</span>
+      </div>
+      <div class="controls">
+        <button class="start" id="btn-start" onclick="startSim()">▶ Başlat</button>
+        <button class="stop" id="btn-stop" onclick="stopSim()" disabled>■ Durdur</button>
+        <button onclick="clearLog()">Logu Temizle</button>
+        <button onclick="resetMetrics()">Sıfırla</button>
+      </div>
+    </div>
+    <div class="metrics">
+      <div class="metric"><div class="metric-label">❤ Kalp Atışı</div><div class="metric-val hr" id="m-hr">--</div><div class="metric-sub">bpm</div></div>
+      <div class="metric"><div class="metric-label">○ SpO₂</div><div class="metric-val spo2" id="m-spo2">--</div><div class="metric-sub">%</div></div>
+      <div class="metric"><div class="metric-label">▮ Batarya</div><div class="metric-val bat" id="m-bat">--</div><div class="metric-sub">%</div></div>
+      <div class="metric"><div class="metric-label">⟳ Gecikme</div><div class="metric-val lat" id="m-lat">--</div><div class="metric-sub">ms</div></div>
+    </div>
+  </div>
+
+  <!-- Right -->
+  <div class="right-panel">
+    <div class="panel-card">
+      <div class="card-header">Gateway JSON Çıktısı</div>
+      <div class="json-body" id="json-out"><span style="opacity:.35">// Henüz veri yok</span></div>
+    </div>
+    <div class="panel-card">
+      <div class="card-header">Seri Port Logu</div>
+      <div class="log-body" id="log-box"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('netCanvas');
+const ctx = canvas.getContext('2d');
+
+const NODES = [
+  { id:'NODE_01', fx:.15, fy:.55, label:'Node 01', color:'#e24b4a' },
+  { id:'NODE_02', fx:.38, fy:.15, label:'Node 02', color:'#f0a623' },
+  { id:'NODE_03', fx:.62, fy:.72, label:'Node 03', color:'#1db97a' },
+  { id:'NODE_04', fx:.82, fy:.25, label:'Node 04', color:'#378add' },
+];
+const GW = { fx:.82, fy:.68, label:'GATEWAY', color:'#6c63ff' };
+
+let packets = [], running = false, intervalId = null;
+let cycleCount = 0, totalPackets = 0, speed = 3000;
+let nodeStates = Object.fromEntries(NODES.map(n => [n.id, 'idle']));
+
+// Build legend
+const leg = document.getElementById('legend');
+NODES.forEach(n => {
+  const el = document.createElement('div');
+  el.className = 'leg-item';
+  el.innerHTML = `<div class="leg-dot" style="background:${n.color}"></div><span>${n.label}</span>`;
+  leg.appendChild(el);
+});
+const gwLeg = document.createElement('div');
+gwLeg.className = 'leg-item';
+gwLeg.innerHTML = `<div class="leg-dot" style="background:${GW.color}"></div><span>Gateway</span>`;
+leg.appendChild(gwLeg);
+
+function resize() {
+  const w = canvas.parentElement.clientWidth;
+  canvas.width = w;
+  canvas.height = 320;
+}
+resize();
+window.addEventListener('resize', () => { resize(); draw(); });
+
+function px(fx) { return fx * canvas.width; }
+function py(fy) { return fy * canvas.height; }
+function ri(a,b) { return Math.floor(Math.random()*(b-a+1))+a; }
+function rf(a,b,d=4) { return parseFloat((Math.random()*(b-a)+a).toFixed(d)); }
+
+function drawGrid() {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth = 1;
+  for(let x=0; x<canvas.width; x+=40) {
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke();
+  }
+  for(let y=0; y<canvas.height; y+=40) {
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawMeshLines() {
+  ctx.save();
+  ctx.setLineDash([3,6]);
+  ctx.lineWidth = 0.8;
+  NODES.forEach((a,i) => {
+    NODES.forEach((b,j) => {
+      if(j>i) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        ctx.beginPath();
+        ctx.moveTo(px(a.fx), py(a.fy));
+        ctx.lineTo(px(b.fx), py(b.fy));
+        ctx.stroke();
+      }
+    });
+    ctx.strokeStyle = 'rgba(108,99,255,0.12)';
+    ctx.beginPath();
+    ctx.moveTo(px(a.fx), py(a.fy));
+    ctx.lineTo(px(GW.fx), py(GW.fy));
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawNode(n) {
+  const x = px(n.fx), y = py(n.fy);
+  const state = nodeStates[n.id];
+  ctx.save();
+  if(state === 'sending') {
+    ctx.shadowColor = n.color;
+    ctx.shadowBlur = 20;
+    // ping ring
+    ctx.beginPath(); ctx.arc(x,y,22,0,Math.PI*2);
+    ctx.strokeStyle = n.color + '44'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+  // outer ring
+  ctx.beginPath(); ctx.arc(x,y,15,0,Math.PI*2);
+  ctx.strokeStyle = n.color + (state==='sleep'?'44':'88');
+  ctx.lineWidth = 1; ctx.stroke();
+  // fill
+  ctx.beginPath(); ctx.arc(x,y,11,0,Math.PI*2);
+  ctx.fillStyle = n.color + (state==='sleep'?'33':'cc');
+  ctx.fill();
+  ctx.restore();
+  // label
+  ctx.fillStyle = state==='sleep' ? '#555' : '#ccc';
+  ctx.font = '500 10px Inter,sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(n.label, x, y+27);
+  if(state==='sleep') {
+    ctx.fillStyle = '#555';
+    ctx.font = '9px sans-serif';
+    ctx.fillText('zzz', x+16, y-12);
+  }
+}
+
+function drawGateway() {
+  const x = px(GW.fx), y = py(GW.fy);
+  ctx.save();
+  ctx.shadowColor = '#6c63ff';
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  roundRect(ctx, x-26, y-15, 52, 30, 8);
+  ctx.fillStyle = 'rgba(108,99,255,0.18)';
+  ctx.fill();
+  ctx.strokeStyle = '#6c63ff';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = '#a99dff';
+  ctx.font = '600 9px Inter,sans-serif';
+  ctx.textAlign = 'center';
+  ctx.letterSpacing = '1px';
+  ctx.fillText('GATEWAY', x, y+4);
+  ctx.fillStyle = '#555';
+  ctx.font = '9px Inter,sans-serif';
+  ctx.fillText('Serial→JSON', x, y+25);
+}
+
+function roundRect(c, x,y,w,h,r) {
+  c.beginPath(); c.moveTo(x+r,y);
+  c.lineTo(x+w-r,y); c.arcTo(x+w,y,x+w,y+r,r);
+  c.lineTo(x+w,y+h-r); c.arcTo(x+w,y+h,x+w-r,y+h,r);
+  c.lineTo(x+r,y+h); c.arcTo(x,y+h,x,y+h-r,r);
+  c.lineTo(x,y+r); c.arcTo(x,y,x+r,y,r); c.closePath();
+}
+
+function drawPackets() {
+  packets.forEach(p => {
+    const sx = px(p.sx), sy = py(p.sy);
+    const ex = px(p.ex), ey = py(p.ey);
+    const x = sx + (ex-sx)*p.t;
+    const y = sy + (ey-sy)*p.t;
+    ctx.save();
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2);
+    ctx.fillStyle = p.color;
+    ctx.fill();
+    // trail
+    for(let i=1;i<=3;i++){
+      const tt = Math.max(0,p.t-i*0.04);
+      const tx2 = sx+(ex-sx)*tt, ty2 = sy+(ey-sy)*tt;
+      ctx.beginPath(); ctx.arc(tx2,ty2,3-i*0.6,0,Math.PI*2);
+      ctx.fillStyle = p.color+(i===1?'88':i===2?'44':'22');
+      ctx.fill();
+    }
+    ctx.restore();
+  });
+}
+
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawGrid();
+  drawMeshLines();
+  drawGateway();
+  NODES.forEach(n => drawNode(n));
+  drawPackets();
+}
+
+let raf;
+function animate() {
+  packets.forEach(p => { p.t = Math.min(1, p.t+0.04); });
+  packets = packets.filter(p => p.t < 1);
+  draw();
+  raf = requestAnimationFrame(animate);
+}
+
+function log(msg, cls='') {
+  const box = document.getElementById('log-box');
+  const d = document.createElement('div');
+  d.className = 'll '+cls;
+  const t = new Date().toLocaleTimeString('tr-TR',{hour12:false});
+  d.textContent = '['+t+'] '+msg;
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
+  // max 120 lines
+  while(box.children.length > 120) box.removeChild(box.firstChild);
+}
+
+function renderJson(data) {
+  const lines = ['{'];
+  const entries = Object.entries(data);
+  entries.forEach(([k,v],i) => {
+    const comma = i < entries.length-1 ? ',' : '';
+    const val = typeof v === 'string'
+      ? `<span class="js">"${v}"</span>`
+      : `<span class="jn">${v}</span>`;
+    lines.push(`  <span class="jk">"${k}"</span>: ${val}${comma}`);
+  });
+  lines.push('}');
+  document.getElementById('json-out').innerHTML = lines.join('\n');
+}
+
+function runCycle() {
+  cycleCount++;
+  totalPackets++;
+  document.getElementById('pkt-count').textContent = 'Paket: '+totalPackets;
+  const node = NODES[(cycleCount-1) % NODES.length];
+  const hr   = ri(60,105);
+  const spo2 = ri(94,100);
+  const bat  = ri(35,100);
+  const lat  = ri(8,48);
+  const ts   = Date.now();
+
+  nodeStates[node.id] = 'sending';
+  log(`[${node.id}] setup() başladı`, 'ok');
+  log(`[${node.id}] Sensör okundu → HR:${hr}bpm SpO₂:${spo2}% Bat:${bat}%`, 'ok');
+  log(`[${node.id}] esp_now_send() → broadcast gönderiliyor...`, 'send');
+
+  // broadcast to all other nodes first (mesh)
+  NODES.forEach(other => {
+    if(other.id !== node.id) {
+      setTimeout(() => {
+        packets.push({ sx:node.fx, sy:node.fy, ex:other.fx, ey:other.fy, t:0, color:node.color+'66' });
+      }, Math.random()*200);
+    }
+  });
+  // main packet to gateway
+  packets.push({ sx:node.fx, sy:node.fy, ex:GW.fx, ey:GW.fy, t:0, color:node.color });
+
+  setTimeout(() => {
+    nodeStates[node.id] = 'sleep';
+    log(`[GATEWAY] OnDataRecv() tetiklendi ← ${node.id}`, 'recv');
+    log(`[GATEWAY] Boyut kontrolü: ${JSON.stringify({id:'',lat:0,lon:0,hr:0,spo2:0,bat:0,ts:0}).length} byte ✓`, 'recv');
+    log(`[GATEWAY] serializeJson() → Serial.println()`, 'recv');
+
+    const mac = Array.from({length:6},()=>ri(0,255).toString(16).padStart(2,'0').toUpperCase()).join(':');
+    const data = {
+      id: node.id,
+      lat: rf(39.80,40.10),
+      lon: rf(32.65,33.05),
+      hr,
+      spo2,
+      bat,
+      ts,
+      mac
+    };
+    renderJson(data);
+    document.getElementById('m-hr').textContent  = hr;
+    document.getElementById('m-spo2').textContent = spo2;
+    document.getElementById('m-bat').textContent  = bat;
+    document.getElementById('m-lat').textContent  = lat;
+
+    log(`[${node.id}] esp_sleep_enable_timer_wakeup(30s)`, 'sleep');
+    log(`[${node.id}] esp_deep_sleep_start() → zzz`, 'sleep');
+
+    setTimeout(() => {
+      nodeStates[node.id] = 'idle';
+      log(`[${node.id}] Uyku bitti, setup() yeniden çalıştı`, 'ok');
+    }, Math.min(speed*0.7, 2500));
+  }, speed*0.3);
+}
+
+function startSim() {
+  if(running) return;
+  running = true;
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-stop').disabled = false;
+  document.getElementById('status-badge').textContent = '● Çalışıyor';
+  document.getElementById('status-badge').className = 'status-badge running';
+  document.getElementById('hdr-dot').style.background = '#1db97a';
+  document.getElementById('hdr-dot').style.boxShadow = '0 0 8px #1db97a';
+  log('══════════════════════════════════', 'ok');
+  log('Simülasyon başlatıldı', 'ok');
+  log('ESP-NOW Mesh Ağı aktif', 'ok');
+  log('══════════════════════════════════', 'ok');
+  raf = requestAnimationFrame(animate);
+  runCycle();
+  intervalId = setInterval(runCycle, speed);
+}
+
+function stopSim() {
+  running = false;
+  clearInterval(intervalId);
+  cancelAnimationFrame(raf);
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled = true;
+  document.getElementById('status-badge').textContent = '● Durduruldu';
+  document.getElementById('status-badge').className = 'status-badge';
+  document.getElementById('hdr-dot').style.background = '#6c63ff';
+  document.getElementById('hdr-dot').style.boxShadow = '0 0 8px #6c63ff';
+  NODES.forEach(n => nodeStates[n.id] = 'idle');
+  packets = [];
+  log('Simülasyon durduruldu', 'sleep');
+  draw();
+}
+
+function clearLog() { document.getElementById('log-box').innerHTML = ''; }
+
+function resetMetrics() {
+  ['m-hr','m-spo2','m-bat','m-lat'].forEach(id => document.getElementById(id).textContent='--');
+  document.getElementById('json-out').innerHTML = '<span style="opacity:.35">// Henüz veri yok</span>';
+  totalPackets = 0;
+  document.getElementById('pkt-count').textContent = 'Paket: 0';
+  clearLog();
+}
+
+function setSpeed(v) {
+  speed = parseInt(v);
+  document.getElementById('speed-label').textContent = (speed/1000).toFixed(1)+'s';
+  if(running) {
+    clearInterval(intervalId);
+    intervalId = setInterval(runCycle, speed);
+  }
+}
+
+draw();
+</script>
+</body>
+</html>
